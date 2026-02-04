@@ -1,0 +1,17 @@
+# Oracle Instant Client (대용량 파일 - 별도 다운로드 필요)
+docker/*.zip
+
+# Helm
+*.tgz
+charts/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OMC
+.omc/

@@ -1,0 +1,19 @@
+{{- if .Values.oracle.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mssql-latest.fullname" . }}-oracle-tns
+  labels:
+    {{- include "mssql-latest.labels" . | nindent 4 }}
+data:
+  tnsnames.ora: |
+    {{- range $name, $config := .Values.oracle.tnsnames }}
+    {{ $name }} =
+      (DESCRIPTION =
+        (ADDRESS = (PROTOCOL=TCP)(HOST={{ $config.host }})(PORT={{ $config.port }}))
+        (CONNECT_DATA=
+          (SERVICE_NAME={{ $config.serviceName }})
+        )
+      )
+    {{ end }}
+{{- end }}

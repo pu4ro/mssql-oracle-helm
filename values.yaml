@@ -1,0 +1,76 @@
+# Default values for mssql-latest.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# mssql-docker/linux/sample-helm-chart# cat values.yaml
+
+replicas: 1
+
+image:
+  repository: mcr.microsoft.com/mssql/server
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "2022-latest"
+
+ACCEPT_EULA:
+    value: "y"
+MSSQL_PID:
+    value: "Standard"
+MSSQL_AGENT_ENABLED:
+    value: "true"
+hostname: mssql
+sa_password: "Newpower1@"
+containers:
+  ports:
+      containerPort: 1433
+
+podAnnotations: {}
+
+podSecurityContext:
+   fsGroup: 10001
+
+service:
+  type: ClusterIP
+  port: 1433
+
+pvc:
+ StorageClass: "nfs"
+ userdbaccessMode: ReadWriteOnce
+ userdbsize: 20Gi
+ userlogaccessMode: ReadWriteOnce
+ userlogsize: 5Gi
+ tempdbaccessMode: ReadWriteOnce
+ tempsize: 2Gi
+ mssqldataaccessMode: ReadWriteOnce
+ mssqldbsize: 100Gi
+
+# Oracle Client 설정
+oracle:
+  enabled: true
+  # 커스텀 이미지 사용 시 true로 설정
+  useCustomImage: true
+  # 커스텀 이미지 설정
+  customImage:
+    repository: cr.makina.rocks/external-hub/mssql-oracle
+    tag: "2022-latest"
+  # TNS 설정 경로
+  tnsAdminPath: "/var/opt/mssql/oracle/network/admin"
+  # tnsnames.ora 설정
+  tnsnames:
+    MESNPPOP:
+      host: "192.168.70.30"
+      port: 1521
+      serviceName: "MESNPPOP"
+    # 추가 TNS 엔트리 예시
+    # ANOTHER_DB:
+    #   host: "192.168.70.31"
+    #   port: 1521
+    #   serviceName: "ANOTHERDB"
+
+# 이미지 빌드 설정
+imageBuild:
+  enabled: false
+  # Oracle Instant Client 버전
+  instantClientVersion: "23.6.0.24.10"
+  # 빌드 컨텍스트 경로
+  contextPath: "./docker"
