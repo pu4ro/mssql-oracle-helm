@@ -6,15 +6,6 @@ USER root
 # 필수 패키지 및 libaio 설치 (오라클 클라이언트 필수 의존성)
 RUN apt-get update && apt-get install -y unzip libaio1 wget curl gnupg && rm -rf /var/lib/apt/lists/*
 
-# PolyBase 패키지 설치
-# Microsoft 저장소는 이미 베이스 이미지에 포함되어 있음
-RUN apt-get update && \
-    ACCEPT_EULA=Y apt-get install -y mssql-server-polybase && \
-    rm -rf /var/lib/apt/lists/*
-
-# PolyBase 환경 변수
-ENV MSSQL_ENABLE_POLYBASE=1
-
 # 오라클 클라이언트 설치 경로 생성
 RUN mkdir -p /opt/oracle
 WORKDIR /opt/oracle
