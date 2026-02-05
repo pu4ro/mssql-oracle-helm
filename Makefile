@@ -9,6 +9,7 @@ REGISTRY ?= cr.makina.rocks/external-hub
 IMAGE_NAME ?= mssql-oracle
 IMAGE_TAG ?= 2022-latest
 DOCKER_DIR ?= docker
+SA_PASSWORD ?= Newpower1@
 
 # Kubernetes Context
 KUBE_CONTEXT ?= kwater-config
@@ -19,7 +20,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m
 
-.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all
+.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase
 
 # 기본 타겟
 help:
@@ -41,6 +42,9 @@ help:
 	@echo "  $(GREEN)make test-network$(NC) - 네트워크 연결 테스트"
 	@echo "  $(GREEN)make test-all$(NC)   - 전체 Oracle 테스트"
 	@echo "  $(GREEN)make test-mssql$(NC) - MSSQL 연결 테스트"
+	@echo "  $(GREEN)make setup-polybase$(NC) - PolyBase Oracle 연결 설정"
+	@echo "  $(GREEN)make test-polybase$(NC)  - PolyBase 설정 확인"
+	@echo "  $(GREEN)make clean-polybase$(NC) - PolyBase 설정 삭제"
 	@echo "  $(GREEN)make clean$(NC)      - 빌드 아티팩트 정리"
 	@echo "  $(GREEN)make all$(NC)        - 빌드 + 푸시 + 배포"
 	@echo ""
@@ -182,6 +186,90 @@ test-network:
 # 전체 Oracle 테스트
 test-all: test test-odbc test-network
 	@echo "$(GREEN)=== 전체 Oracle 테스트 완료 ===$(NC)"
+
+# PolyBase 설정 변수
+POLYBASE_DB ?= master
+MASTER_KEY_PWD ?= PolyBase@SecureKey123!
+ORACLE_USER ?= EZOFFICE
+ORACLE_PWD ?= 1215
+ORACLE_HOST ?= 192.168.70.30
+ORACLE_PORT ?= 1521
+ORACLE_SERVICE ?= MESNPPOP
+ORACLE_DRIVER ?= Oracle 23 ODBC driver
+
+# PolyBase 활성화
+setup-polybase-enable:
+	@echo "$(YELLOW)=== PolyBase 활성화 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_configure 'polybase enabled', 1; RECONFIGURE;"
+	@echo "$(GREEN)PolyBase 활성화 완료 (Pod 재시작 필요할 수 있음)$(NC)"
+
+# Master Key 생성
+setup-polybase-masterkey:
+	@echo "$(YELLOW)=== Master Key 생성 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##') CREATE MASTER KEY ENCRYPTION BY PASSWORD = '$(MASTER_KEY_PWD)';"
+	@echo "$(GREEN)Master Key 생성 완료$(NC)"
+
+# Oracle Credential 생성
+setup-polybase-credential:
+	@echo "$(YELLOW)=== Oracle Credential 생성 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); IF NOT EXISTS (SELECT * FROM sys.database_scoped_credentials WHERE name = 'OracleCredential') CREATE DATABASE SCOPED CREDENTIAL OracleCredential WITH IDENTITY = '$(ORACLE_USER)', SECRET = '$(ORACLE_PWD)';"
+	@echo "$(GREEN)Oracle Credential 생성 완료$(NC)"
+
+# Oracle External Data Source 생성
+setup-polybase-datasource:
+	@echo "$(YELLOW)=== Oracle External Data Source 생성 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); IF NOT EXISTS (SELECT * FROM sys.external_data_sources WHERE name = 'OracleDataSource') CREATE EXTERNAL DATA SOURCE OracleDataSource WITH (LOCATION = 'odbc://$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE)', CONNECTION_OPTIONS = 'Driver={$(ORACLE_DRIVER)}', CREDENTIAL = OracleCredential);"
+	@echo "$(GREEN)Oracle External Data Source 생성 완료$(NC)"
+
+# PolyBase 전체 설정
+setup-polybase: setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)PolyBase Oracle 연결 설정 완료!$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@echo ""
+	@echo "$(YELLOW)사용 예시:$(NC)"
+	@echo "  CREATE EXTERNAL TABLE OracleTable ("
+	@echo "      col1 INT,"
+	@echo "      col2 NVARCHAR(100)"
+	@echo "  )"
+	@echo "  WITH ("
+	@echo "      LOCATION = 'SCHEMA.TABLE_NAME',"
+	@echo "      DATA_SOURCE = OracleDataSource"
+	@echo "  );"
+
+# PolyBase 설정 확인
+test-polybase:
+	@echo "$(YELLOW)=== PolyBase 설정 확인 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT name, value_in_use FROM sys.configurations WHERE name = 'polybase enabled';"
+	@echo ""
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); SELECT name FROM sys.database_scoped_credentials;"
+	@echo ""
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); SELECT name, location FROM sys.external_data_sources;"
+
+# PolyBase 설정 삭제
+clean-polybase:
+	@echo "$(YELLOW)=== PolyBase 설정 삭제 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); IF EXISTS (SELECT * FROM sys.external_data_sources WHERE name = 'OracleDataSource') DROP EXTERNAL DATA SOURCE OracleDataSource;" || true
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"USE $(POLYBASE_DB); IF EXISTS (SELECT * FROM sys.database_scoped_credentials WHERE name = 'OracleCredential') DROP DATABASE SCOPED CREDENTIAL OracleCredential;" || true
+	@echo "$(GREEN)PolyBase 설정 삭제 완료$(NC)"
 
 # MSSQL 연결 테스트
 test-mssql:

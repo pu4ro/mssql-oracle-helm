@@ -89,6 +89,22 @@ oracle:
       #   description: "Another Oracle Database"
       #   serverName: "//192.168.70.31:1521/ANOTHERDB"
 
+# PolyBase 설정 (Oracle 연결용)
+polybase:
+  enabled: true
+  masterKeyPassword: "PolyBase@SecureKey123!"
+  oracle:
+    credential:
+      name: "OracleCredential"
+      user: "EZOFFICE"
+      password: "1215"
+    dataSource:
+      name: "OracleDataSource"
+      host: "192.168.70.30"
+      port: 1521
+      serviceName: "MESNPPOP"
+      driver: "Oracle 23 ODBC driver"
+
 # 이미지 빌드 설정
 imageBuild:
   enabled: false
