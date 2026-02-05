@@ -20,7 +20,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m
 
-.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase setup-adhoc-queries test-odbc-direct setup-linkedserver setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login test-linkedserver query-oracle clean-linkedserver
+.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase setup-adhoc-queries test-adhoc test-adhoc-tables test-adhoc-query test-odbc-direct setup-linkedserver setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login test-linkedserver query-oracle clean-linkedserver
 
 # 기본 타겟
 help:
@@ -48,6 +48,9 @@ help:
 	@echo ""
 	@echo "$(YELLOW)ODBC 직접 연결 (Linux 권장):$(NC)"
 	@echo "  $(GREEN)make setup-adhoc-queries$(NC) - Ad-hoc 분산 쿼리 활성화"
+	@echo "  $(GREEN)make test-adhoc$(NC)       - Ad-hoc 쿼리 테스트 (DUAL 테이블)"
+	@echo "  $(GREEN)make test-adhoc-tables$(NC) - Oracle 테이블 목록 조회"
+	@echo "  $(GREEN)make test-adhoc-query$(NC)  - 커스텀 Oracle 쿼리 실행"
 	@echo "  $(GREEN)make test-odbc-direct$(NC)  - ODBC 설정 확인"
 	@echo ""
 	@echo "$(YELLOW)Linked Server (Windows 전용):$(NC)"
@@ -292,6 +295,37 @@ setup-adhoc-queries:
 	@echo "    'Driver={Oracle 23 ODBC driver};DBQ=$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE);',"
 	@echo "    'SELECT * FROM SCHEMA.TABLE'"
 	@echo "  );"
+
+# Ad-hoc 분산 쿼리 테스트 (Oracle DUAL 테이블)
+test-adhoc:
+	@echo "$(YELLOW)=== Ad-hoc 분산 쿼리 테스트 ===$(NC)"
+	@echo "1. Ad-hoc 분산 쿼리 설정 확인..."
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT name, value_in_use FROM sys.configurations WHERE name = 'Ad Hoc Distributed Queries';"
+	@echo ""
+	@echo "2. Oracle DUAL 테이블 쿼리 테스트..."
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT * FROM OPENROWSET('MSDASQL', 'Driver={$(ORACLE_DRIVER)};DBQ=$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE);UID=$(ORACLE_USER);PWD=$(ORACLE_PWD)', 'SELECT ''Connected!'' AS STATUS, SYSDATE AS ORACLE_TIME FROM DUAL');" 2>&1 || \
+		echo "$(RED)Ad-hoc 쿼리 실패 - MSDASQL 드라이버가 설치되지 않았거나 Oracle 연결 오류$(NC)"
+
+# Ad-hoc 쿼리로 Oracle 테이블 목록 조회
+test-adhoc-tables:
+	@echo "$(YELLOW)=== Oracle 테이블 목록 조회 (Ad-hoc) ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT * FROM OPENROWSET('MSDASQL', 'Driver={$(ORACLE_DRIVER)};DBQ=$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE);UID=$(ORACLE_USER);PWD=$(ORACLE_PWD)', 'SELECT TABLE_NAME FROM USER_TABLES WHERE ROWNUM <= 10');" 2>&1 || \
+		echo "$(RED)테이블 목록 조회 실패$(NC)"
+
+# Ad-hoc 커스텀 쿼리 실행
+test-adhoc-query:
+	@echo "$(YELLOW)=== Ad-hoc 커스텀 쿼리 실행 ===$(NC)"
+	@echo "Oracle 쿼리를 입력하세요 (예: SELECT * FROM DUAL)"
+	@read -p "쿼리: " query; \
+	kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT * FROM OPENROWSET('MSDASQL', 'Driver={$(ORACLE_DRIVER)};DBQ=$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE);UID=$(ORACLE_USER);PWD=$(ORACLE_PWD)', '$$query');"
 
 # ODBC 직접 연결 테스트 (isql 사용)
 test-odbc-direct:
