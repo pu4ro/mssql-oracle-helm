@@ -287,17 +287,30 @@ setup-linkedserver-provider:
 # Linked Server 생성
 setup-linkedserver-create:
 	@echo "$(YELLOW)=== Linked Server 생성 ===$(NC)"
+	@echo "기존 Linked Server 삭제 시도..."
 	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
 		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
-		"IF EXISTS (SELECT * FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') EXEC sp_dropserver '$(LINKED_SERVER_NAME)', 'droplogins';"
+		"IF EXISTS (SELECT * FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') EXEC sp_dropserver '$(LINKED_SERVER_NAME)', 'droplogins';" || true
+	@echo "Linked Server 생성 중..."
 	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
 		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
-		"EXEC sp_addlinkedserver @server='$(LINKED_SERVER_NAME)', @srvproduct='Oracle', @provider='MSDASQL', @datasrc='$(LINKED_SERVER_DSN)';"
+		"EXEC sp_addlinkedserver @server='$(LINKED_SERVER_NAME)', @srvproduct='Oracle', @provider='MSDASQL', @datasrc='$(LINKED_SERVER_DSN)';" || \
+		(echo "$(RED)ERROR: sp_addlinkedserver 실패! MSDASQL provider가 설치되어 있는지 확인하세요.$(NC)" && exit 1)
+	@echo "Linked Server 생성 확인 중..."
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') RAISERROR('Linked Server $(LINKED_SERVER_NAME) 생성 실패', 16, 1); ELSE PRINT 'Linked Server $(LINKED_SERVER_NAME) 확인됨';"
 	@echo "$(GREEN)Linked Server 생성 완료$(NC)"
 
 # Linked Server 로그인 설정
 setup-linkedserver-login:
 	@echo "$(YELLOW)=== Linked Server 로그인 설정 ===$(NC)"
+	@echo "Linked Server 존재 여부 확인..."
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') RAISERROR('Linked Server $(LINKED_SERVER_NAME)가 존재하지 않습니다. 먼저 make setup-linkedserver-create를 실행하세요.', 16, 1);" || \
+		(echo "$(RED)ERROR: Linked Server가 존재하지 않습니다!$(NC)" && exit 1)
+	@echo "로그인 매핑 설정 중..."
 	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
 		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
 		"EXEC sp_addlinkedsrvlogin @rmtsrvname='$(LINKED_SERVER_NAME)', @useself='FALSE', @rmtuser='$(ORACLE_USER)', @rmtpassword='$(ORACLE_PWD)';"
