@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM cr.makina.rocks/external-hub/ubuntu:22.04
 
 # 비대화형 모드 설정
 ENV DEBIAN_FRONTEND=noninteractive
