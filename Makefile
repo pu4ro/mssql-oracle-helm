@@ -19,7 +19,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m
 
-.PHONY: help build push deploy upgrade uninstall status logs shell test clean all
+.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all
 
 # 기본 타겟
 help:
@@ -37,6 +37,10 @@ help:
 	@echo "  $(GREEN)make logs$(NC)       - Pod 로그 확인"
 	@echo "  $(GREEN)make shell$(NC)      - Pod 쉘 접속"
 	@echo "  $(GREEN)make test$(NC)       - Oracle 클라이언트 테스트"
+	@echo "  $(GREEN)make test-odbc$(NC)  - ODBC 설정 테스트"
+	@echo "  $(GREEN)make test-network$(NC) - 네트워크 연결 테스트"
+	@echo "  $(GREEN)make test-all$(NC)   - 전체 Oracle 테스트"
+	@echo "  $(GREEN)make test-mssql$(NC) - MSSQL 연결 테스트"
 	@echo "  $(GREEN)make clean$(NC)      - 빌드 아티팩트 정리"
 	@echo "  $(GREEN)make all$(NC)        - 빌드 + 푸시 + 배포"
 	@echo ""
@@ -153,6 +157,31 @@ test:
 		echo ""; echo "=== tnsnames.ora ==="; cat $$TNS_ADMIN/tnsnames.ora; \
 		echo ""; echo "=== Oracle Client Version ==="; \
 		/opt/oracle/instantclient_23_6/genezi -v 2>&1 | head -10'
+
+# ODBC 설정 테스트
+test-odbc:
+	@echo "$(YELLOW)=== Oracle ODBC 설정 테스트 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		bash -c 'echo "=== 환경변수 ==="; \
+		echo "ODBCINI=$$ODBCINI"; echo "ODBCSYSINI=$$ODBCSYSINI"; \
+		echo ""; echo "=== odbcinst.ini (드라이버 설정) ==="; cat /etc/odbcinst.ini; \
+		echo ""; echo "=== odbc.ini (DSN 설정) ==="; cat /etc/odbc.ini; \
+		echo ""; echo "=== ODBC 드라이버 파일 확인 ==="; ls -la /opt/oracle/instantclient_23_6/libsqora* 2>/dev/null || echo "드라이버 파일 없음"'
+
+# Oracle 네트워크 연결 테스트 (포트 확인)
+test-network:
+	@echo "$(YELLOW)=== Oracle 네트워크 연결 테스트 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		bash -c 'for entry in $$(grep -oP "^\s*\K[A-Z_]+(?=\s*=)" $$TNS_ADMIN/tnsnames.ora); do \
+		host=$$(grep -A5 "$$entry" $$TNS_ADMIN/tnsnames.ora | grep -oP "HOST=\K[^)]+"); \
+		port=$$(grep -A5 "$$entry" $$TNS_ADMIN/tnsnames.ora | grep -oP "PORT=\K[^)]+"); \
+		echo -n "$$entry ($$host:$$port): "; \
+		timeout 3 bash -c "echo > /dev/tcp/$$host/$$port" 2>/dev/null && echo "$(GREEN)OK$(NC)" || echo "$(RED)FAIL$(NC)"; \
+		done'
+
+# 전체 Oracle 테스트
+test-all: test test-odbc test-network
+	@echo "$(GREEN)=== 전체 Oracle 테스트 완료 ===$(NC)"
 
 # MSSQL 연결 테스트
 test-mssql:

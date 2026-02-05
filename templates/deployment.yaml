@@ -52,6 +52,14 @@ spec:
              value: "{{ .Values.oracle.tnsAdminPath }}"
            - name: LD_LIBRARY_PATH
              value: "/opt/oracle/instantclient_23_6"
+           - name: ORACLE_HOME
+             value: "/opt/oracle/instantclient_23_6"
+           {{- if .Values.oracle.odbc.enabled }}
+           - name: ODBCINI
+             value: "/etc/odbc.ini"
+           - name: ODBCSYSINI
+             value: "/etc"
+           {{- end }}
            {{- end }}
           volumeMounts:
            - name: mssqldb
@@ -68,6 +76,14 @@ spec:
            - name: oracle-tns-volume
              mountPath: {{ .Values.oracle.tnsAdminPath }}/tnsnames.ora
              subPath: tnsnames.ora
+           {{- if .Values.oracle.odbc.enabled }}
+           - name: oracle-odbc-volume
+             mountPath: /etc/odbcinst.ini
+             subPath: odbcinst.ini
+           - name: oracle-odbc-volume
+             mountPath: /etc/odbc.ini
+             subPath: odbc.ini
+           {{- end }}
            {{- end }}
       volumes:
        - name: mssqldb
@@ -89,4 +105,9 @@ spec:
        - name: oracle-tns-volume
          configMap:
           name: {{ include "mssql-latest.fullname" . }}-oracle-tns
+       {{- if .Values.oracle.odbc.enabled }}
+       - name: oracle-odbc-volume
+         configMap:
+          name: {{ include "mssql-latest.fullname" . }}-oracle-odbc
+       {{- end }}
        {{- end }}

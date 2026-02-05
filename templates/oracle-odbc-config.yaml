@@ -1,0 +1,22 @@
+{{- if and .Values.oracle.enabled .Values.oracle.odbc.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mssql-latest.fullname" . }}-oracle-odbc
+  labels:
+    {{- include "mssql-latest.labels" . | nindent 4 }}
+data:
+  odbcinst.ini: |
+    [{{ .Values.oracle.odbc.driver.name }}]
+    Description = {{ .Values.oracle.odbc.driver.description }}
+    Driver = {{ .Values.oracle.odbc.driver.driverPath }}
+    FileUsage = 1
+
+  odbc.ini: |
+    {{- range $name, $config := .Values.oracle.odbc.dsn }}
+    [{{ $name }}]
+    Description = {{ $config.description }}
+    Driver = {{ $.Values.oracle.odbc.driver.name }}
+    ServerName = {{ $config.serverName }}
+    {{ end }}
+{{- end }}

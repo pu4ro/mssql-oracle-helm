@@ -66,6 +66,23 @@ oracle:
     #   host: "192.168.70.31"
     #   port: 1521
     #   serviceName: "ANOTHERDB"
+  # ODBC 설정
+  odbc:
+    enabled: true
+    # ODBC 드라이버 설정 (odbcinst.ini)
+    driver:
+      name: "Oracle 23 ODBC driver"
+      description: "Oracle ODBC driver for Oracle 23"
+      driverPath: "/opt/oracle/instantclient_23_6/libsqora.so.23.1"
+    # DSN 설정 (odbc.ini)
+    dsn:
+      MESNPPOP:
+        description: "Oracle MESNPPOP Database"
+        serverName: "//192.168.70.30:1521/MESNPPOP"
+      # 추가 DSN 예시
+      # ANOTHER_DSN:
+      #   description: "Another Oracle Database"
+      #   serverName: "//192.168.70.31:1521/ANOTHERDB"
 
 # 이미지 빌드 설정
 imageBuild:
