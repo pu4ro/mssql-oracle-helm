@@ -20,7 +20,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m
 
-.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase
+.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase setup-linkedserver setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login test-linkedserver query-oracle clean-linkedserver
 
 # 기본 타겟
 help:
@@ -45,6 +45,10 @@ help:
 	@echo "  $(GREEN)make setup-polybase$(NC) - PolyBase Oracle 연결 설정"
 	@echo "  $(GREEN)make test-polybase$(NC)  - PolyBase 설정 확인"
 	@echo "  $(GREEN)make clean-polybase$(NC) - PolyBase 설정 삭제"
+	@echo "  $(GREEN)make setup-linkedserver$(NC) - Linked Server Oracle 연결 설정"
+	@echo "  $(GREEN)make test-linkedserver$(NC)  - Linked Server 연결 테스트"
+	@echo "  $(GREEN)make query-oracle$(NC)   - OPENQUERY로 Oracle 쿼리 실행"
+	@echo "  $(GREEN)make clean-linkedserver$(NC) - Linked Server 삭제"
 	@echo "  $(GREEN)make clean$(NC)      - 빌드 아티팩트 정리"
 	@echo "  $(GREEN)make all$(NC)        - 빌드 + 푸시 + 배포"
 	@echo ""
@@ -187,6 +191,10 @@ test-network:
 test-all: test test-odbc test-network
 	@echo "$(GREEN)=== 전체 Oracle 테스트 완료 ===$(NC)"
 
+# Linked Server 설정 변수
+LINKED_SERVER_NAME ?= ORA23_LINK
+LINKED_SERVER_DSN ?= Oracle23DSN
+
 # PolyBase 설정 변수
 POLYBASE_DB ?= master
 MASTER_KEY_PWD ?= PolyBase@SecureKey123!
@@ -259,6 +267,82 @@ test-polybase:
 	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
 		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
 		"USE $(POLYBASE_DB); SELECT name, location FROM sys.external_data_sources;"
+
+# ===========================================
+# Linked Server 설정 (Oracle 23 연결)
+# ===========================================
+
+# MSDASQL AllowInProcess 설정
+setup-linkedserver-provider:
+	@echo "$(YELLOW)=== MSDASQL Provider 설정 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_configure 'show advanced options', 1; RECONFIGURE;"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC master.dbo.sp_MSset_oledb_prop 'MSDASQL', 'AllowInProcess', 1;" 2>/dev/null || \
+		echo "$(YELLOW)sp_MSset_oledb_prop 사용 불가 - 대체 방법 시도$(NC)"
+	@echo "$(GREEN)Provider 설정 완료$(NC)"
+
+# Linked Server 생성
+setup-linkedserver-create:
+	@echo "$(YELLOW)=== Linked Server 생성 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"IF EXISTS (SELECT * FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') EXEC sp_dropserver '$(LINKED_SERVER_NAME)', 'droplogins';"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_addlinkedserver @server='$(LINKED_SERVER_NAME)', @srvproduct='Oracle', @provider='MSDASQL', @datasrc='$(LINKED_SERVER_DSN)';"
+	@echo "$(GREEN)Linked Server 생성 완료$(NC)"
+
+# Linked Server 로그인 설정
+setup-linkedserver-login:
+	@echo "$(YELLOW)=== Linked Server 로그인 설정 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_addlinkedsrvlogin @rmtsrvname='$(LINKED_SERVER_NAME)', @useself='FALSE', @rmtuser='$(ORACLE_USER)', @rmtpassword='$(ORACLE_PWD)';"
+	@echo "$(GREEN)로그인 설정 완료$(NC)"
+
+# Linked Server 전체 설정
+setup-linkedserver: setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login
+	@echo "$(GREEN)========================================$(NC)"
+	@echo "$(GREEN)Linked Server Oracle 연결 설정 완료!$(NC)"
+	@echo "$(GREEN)========================================$(NC)"
+	@echo ""
+	@echo "$(YELLOW)사용 예시:$(NC)"
+	@echo "  -- OPENQUERY 사용 (권장)"
+	@echo "  SELECT * FROM OPENQUERY($(LINKED_SERVER_NAME), 'SELECT * FROM SCHEMA.TABLE');"
+	@echo ""
+	@echo "  -- 4-part naming"
+	@echo "  SELECT * FROM $(LINKED_SERVER_NAME)..SCHEMA.TABLE;"
+
+# Linked Server 테스트
+test-linkedserver:
+	@echo "$(YELLOW)=== Linked Server 설정 확인 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT name, provider, data_source FROM sys.servers WHERE is_linked = 1;"
+	@echo ""
+	@echo "$(YELLOW)=== Linked Server 연결 테스트 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_testlinkedserver '$(LINKED_SERVER_NAME)';" 2>&1 || echo "$(RED)연결 테스트 실패$(NC)"
+
+# Linked Server로 Oracle 쿼리 실행
+query-oracle:
+	@echo "$(YELLOW)=== Oracle 쿼리 실행 (OPENQUERY) ===$(NC)"
+	@read -p "Oracle 쿼리 입력: " query; \
+	kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"SELECT * FROM OPENQUERY($(LINKED_SERVER_NAME), '$$query');"
+
+# Linked Server 삭제
+clean-linkedserver:
+	@echo "$(YELLOW)=== Linked Server 삭제 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"IF EXISTS (SELECT * FROM sys.servers WHERE name = '$(LINKED_SERVER_NAME)') EXEC sp_dropserver '$(LINKED_SERVER_NAME)', 'droplogins';" || true
+	@echo "$(GREEN)Linked Server 삭제 완료$(NC)"
 
 # PolyBase 설정 삭제
 clean-polybase:

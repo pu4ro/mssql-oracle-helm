@@ -74,20 +74,31 @@ oracle:
       name: "ODBC Driver 18 for SQL Server"
       description: "Microsoft ODBC Driver 18 for SQL Server"
       driverPath: "/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1"
-    # Oracle ODBC 드라이버 설정 (odbcinst.ini)
+    # Oracle 23 ODBC 드라이버 설정 (odbcinst.ini)
     driver:
-      name: "Oracle 23 ODBC driver"
-      description: "Oracle ODBC driver for Oracle 23"
+      name: "Oracle23"
+      description: "Oracle 23ai ODBC driver"
       driverPath: "/opt/oracle/instantclient_23_6/libsqora.so.23.1"
-    # DSN 설정 (odbc.ini)
+    # DSN 설정 (odbc.ini) - Easy Connect Plus 형식
     dsn:
-      MESNPPOP:
-        description: "Oracle MESNPPOP Database"
+      Oracle23DSN:
+        description: "Oracle 23 MESNPPOP Database"
         serverName: "//192.168.70.30:1521/MESNPPOP"
+        enableLOBs: "T"
+        batchAutocommitMode: "IfAllSuccessful"
       # 추가 DSN 예시
       # ANOTHER_DSN:
       #   description: "Another Oracle Database"
       #   serverName: "//192.168.70.31:1521/ANOTHERDB"
+
+  # Linked Server 설정 (Oracle 연결용)
+  linkedServer:
+    enabled: true
+    name: "ORA23_LINK"
+    provider: "MSDASQL"
+    dsn: "Oracle23DSN"
+    user: "EZOFFICE"
+    password: "1215"
 
 # PolyBase 설정 (Oracle 연결용)
 polybase:

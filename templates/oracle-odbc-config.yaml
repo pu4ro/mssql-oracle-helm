@@ -15,6 +15,7 @@ data:
     [{{ .Values.oracle.odbc.driver.name }}]
     Description = {{ .Values.oracle.odbc.driver.description }}
     Driver = {{ .Values.oracle.odbc.driver.driverPath }}
+    Setup = {{ .Values.oracle.odbc.driver.driverPath }}
     FileUsage = 1
 
   odbc.ini: |
@@ -22,6 +23,13 @@ data:
     [{{ $name }}]
     Description = {{ $config.description }}
     Driver = {{ $.Values.oracle.odbc.driver.name }}
+    DSN = {{ $name }}
     ServerName = {{ $config.serverName }}
+    {{- if $config.enableLOBs }}
+    EnableLOBs = {{ $config.enableLOBs }}
+    {{- end }}
+    {{- if $config.batchAutocommitMode }}
+    BatchAutocommitMode = {{ $config.batchAutocommitMode }}
+    {{- end }}
     {{ end }}
 {{- end }}
