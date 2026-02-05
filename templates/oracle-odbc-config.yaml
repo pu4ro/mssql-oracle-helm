@@ -7,6 +7,11 @@ metadata:
     {{- include "mssql-latest.labels" . | nindent 4 }}
 data:
   odbcinst.ini: |
+    [{{ .Values.oracle.odbc.mssqlDriver.name }}]
+    Description = {{ .Values.oracle.odbc.mssqlDriver.description }}
+    Driver = {{ .Values.oracle.odbc.mssqlDriver.driverPath }}
+    UsageCount = 1
+
     [{{ .Values.oracle.odbc.driver.name }}]
     Description = {{ .Values.oracle.odbc.driver.description }}
     Driver = {{ .Values.oracle.odbc.driver.driverPath }}

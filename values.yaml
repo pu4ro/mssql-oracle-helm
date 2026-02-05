@@ -69,7 +69,12 @@ oracle:
   # ODBC 설정
   odbc:
     enabled: true
-    # ODBC 드라이버 설정 (odbcinst.ini)
+    # MSSQL ODBC 드라이버 설정 (기존 드라이버 유지)
+    mssqlDriver:
+      name: "ODBC Driver 18 for SQL Server"
+      description: "Microsoft ODBC Driver 18 for SQL Server"
+      driverPath: "/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-18.6.so.1.1"
+    # Oracle ODBC 드라이버 설정 (odbcinst.ini)
     driver:
       name: "Oracle 23 ODBC driver"
       description: "Oracle ODBC driver for Oracle 23"
