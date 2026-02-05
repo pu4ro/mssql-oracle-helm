@@ -20,7 +20,7 @@ YELLOW := \033[1;33m
 RED := \033[0;31m
 NC := \033[0m
 
-.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase setup-linkedserver setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login test-linkedserver query-oracle clean-linkedserver
+.PHONY: help build push deploy upgrade uninstall status logs shell test test-odbc test-network test-all test-mssql clean all setup-polybase setup-polybase-enable setup-polybase-masterkey setup-polybase-credential setup-polybase-datasource test-polybase clean-polybase setup-adhoc-queries test-odbc-direct setup-linkedserver setup-linkedserver-provider setup-linkedserver-create setup-linkedserver-login test-linkedserver query-oracle clean-linkedserver
 
 # 기본 타겟
 help:
@@ -45,6 +45,12 @@ help:
 	@echo "  $(GREEN)make setup-polybase$(NC) - PolyBase Oracle 연결 설정"
 	@echo "  $(GREEN)make test-polybase$(NC)  - PolyBase 설정 확인"
 	@echo "  $(GREEN)make clean-polybase$(NC) - PolyBase 설정 삭제"
+	@echo ""
+	@echo "$(YELLOW)ODBC 직접 연결 (Linux 권장):$(NC)"
+	@echo "  $(GREEN)make setup-adhoc-queries$(NC) - Ad-hoc 분산 쿼리 활성화"
+	@echo "  $(GREEN)make test-odbc-direct$(NC)  - ODBC 설정 확인"
+	@echo ""
+	@echo "$(YELLOW)Linked Server (Windows 전용):$(NC)"
 	@echo "  $(GREEN)make setup-linkedserver$(NC) - Linked Server Oracle 연결 설정"
 	@echo "  $(GREEN)make test-linkedserver$(NC)  - Linked Server 연결 테스트"
 	@echo "  $(GREEN)make query-oracle$(NC)   - OPENQUERY로 Oracle 쿼리 실행"
@@ -269,10 +275,40 @@ test-polybase:
 		"USE $(POLYBASE_DB); SELECT name, location FROM sys.external_data_sources;"
 
 # ===========================================
-# Linked Server 설정 (Oracle 23 연결)
+# OPENROWSET + ODBC 방식 (Linux 권장)
 # ===========================================
 
-# MSDASQL AllowInProcess 설정
+# Ad-hoc 분산 쿼리 활성화
+setup-adhoc-queries:
+	@echo "$(YELLOW)=== Ad-hoc 분산 쿼리 활성화 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '$(SA_PASSWORD)' -C -Q \
+		"EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'Ad Hoc Distributed Queries', 1; RECONFIGURE;"
+	@echo "$(GREEN)Ad-hoc 분산 쿼리 활성화 완료$(NC)"
+	@echo ""
+	@echo "$(YELLOW)사용 예시:$(NC)"
+	@echo "  SELECT * FROM OPENROWSET("
+	@echo "    'MSDASQL',"
+	@echo "    'Driver={Oracle 23 ODBC driver};DBQ=$(ORACLE_HOST):$(ORACLE_PORT)/$(ORACLE_SERVICE);',"
+	@echo "    'SELECT * FROM SCHEMA.TABLE'"
+	@echo "  );"
+
+# ODBC 직접 연결 테스트 (isql 사용)
+test-odbc-direct:
+	@echo "$(YELLOW)=== ODBC 직접 연결 테스트 ===$(NC)"
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		cat /etc/odbc.ini 2>/dev/null || echo "odbc.ini 없음"
+	@echo ""
+	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
+		cat /etc/odbcinst.ini 2>/dev/null || echo "odbcinst.ini 없음"
+
+# ===========================================
+# Linked Server 설정 (Windows SQL Server용)
+# ===========================================
+# 참고: Linux SQL Server에서는 MSDASQL이 지원되지 않습니다.
+# Linux에서는 위의 OPENROWSET 또는 PolyBase를 사용하세요.
+
+# MSDASQL AllowInProcess 설정 (Windows 전용)
 setup-linkedserver-provider:
 	@echo "$(YELLOW)=== MSDASQL Provider 설정 ===$(NC)"
 	@kubectl --context=$(KUBE_CONTEXT) exec deployment/$(RELEASE_NAME)-mssql-latest -n $(NAMESPACE) -- \
